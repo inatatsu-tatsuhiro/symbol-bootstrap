@@ -1,0 +1,122 @@
+version: '3'
+networks:
+    default:
+        ipam:
+            config:
+                -
+                    subnet: 172.20.0.0/24
+services:
+    db:
+        image: 'mongo:4.2.6-bionic'
+        user: '501:20'
+        command: bash -c "mongod --dbpath=/dbdata --bind_ip=db"
+        stop_signal: SIGINT
+        ports:
+            - '27017:27017'
+        volumes:
+            - '../data/mongo:/dbdata:rw'
+    db-init:
+        image: 'mongo:4.2.6-bionic'
+        user: '501:20'
+        command: bash -c "/bin/bash /userconfig/mongors.sh && touch /state/mongo-is-setup"
+        volumes:
+            - './mongo:/userconfig/:ro'
+            - '../data/mongo:/dbdata:rw'
+            - '../state:/state'
+        depends_on:
+            - db
+    peer-node-0:
+        image: 'symbolplatform/symbol-server:gcc-0.10.0.3'
+        user: '501:20'
+        command: bash -c "/bin/bash /userconfig/runServerRecover.sh  peer-node-0 && /bin/bash /userconfig/startServer.sh peer-node-0"
+        stop_signal: SIGINT
+        depends_on: []
+        restart: 'on-failure:2'
+        ports: []
+        volumes:
+            - './dockerfiles/catapult/userconfig/:/userconfig'
+            - './bin/bash:/bin-mount'
+            - '../config/peer-node-0/resources/:/userconfig/resources/'
+            - '../data/peer-node-0:/data:rw'
+            - '../data/nemesis-data:/nemesis-data:rw'
+            - '../state:/state'
+        hostname: peer-node-0
+        networks:
+            default:
+                aliases:
+                    - peer-node-0
+    peer-node-1:
+        image: 'symbolplatform/symbol-server:gcc-0.10.0.3'
+        user: '501:20'
+        command: bash -c "/bin/bash /userconfig/runServerRecover.sh  peer-node-1 && /bin/bash /userconfig/startServer.sh peer-node-1"
+        stop_signal: SIGINT
+        depends_on: []
+        restart: 'on-failure:2'
+        ports: []
+        volumes:
+            - './dockerfiles/catapult/userconfig/:/userconfig'
+            - './bin/bash:/bin-mount'
+            - '../config/peer-node-1/resources/:/userconfig/resources/'
+            - '../data/peer-node-1:/data:rw'
+            - '../data/nemesis-data:/nemesis-data:rw'
+            - '../state:/state'
+        hostname: peer-node-1
+        networks:
+            default:
+                aliases:
+                    - peer-node-1
+    api-node-0:
+        image: 'symbolplatform/symbol-server:gcc-0.10.0.3'
+        user: '501:20'
+        command: bash -c "/bin/bash /userconfig/runServerRecover.sh  api-node-0 && /bin/bash /userconfig/startServer.sh api-node-0"
+        stop_signal: SIGINT
+        depends_on:
+            - db-init
+            - api-node-broker-0
+        restart: 'on-failure:2'
+        ports:
+            - '7900:7900'
+        volumes:
+            - './dockerfiles/catapult/userconfig/:/userconfig'
+            - './bin/bash:/bin-mount'
+            - '../config/api-node-0/resources/:/userconfig/resources/'
+            - '../data/api-node-0:/data:rw'
+            - '../data/nemesis-data:/nemesis-data:rw'
+            - '../state:/state'
+        hostname: api-node-0
+        networks:
+            default:
+                aliases:
+                    - api-node-0
+    api-node-broker-0:
+        image: 'symbolplatform/symbol-server:gcc-0.10.0.3'
+        user: '501:20'
+        command: bash -c "/bin/bash /userconfig/runServerRecover.sh api-node-broker-0 && /bin/bash /userconfig/startBroker.sh api-node-broker-0"
+        stop_signal: SIGINT
+        ports:
+            - '7902:7902'
+        restart: 'on-failure:2'
+        volumes:
+            - './dockerfiles/catapult/userconfig/:/userconfig'
+            - './bin/bash:/bin-mount'
+            - '../config/api-node-0/resources/:/userconfig/resources/'
+            - '../data/api-node-0:/data:rw'
+            - '../state:/state'
+    rest-gateway:
+        image: 'symbolplatform/symbol-rest:2.1.0'
+        user: '501:20'
+        command: ash -c "npm start /userconfig/rest.json"
+        stop_signal: SIGINT
+        ports:
+            - '3000:3000'
+        volumes:
+            - './bin/ash:/bin-mount'
+            - '../config/rest-gateway/:/userconfig/'
+            - '../state:/state'
+            - '../data/api-node-0/logs:/logs:rw'
+            - '../config/api-node-0/resources/:/usr/local/share/symbol/api-node-config/'
+        depends_on:
+            - db-init
+        networks:
+            default:
+                ipv4_address: 172.20.0.25
